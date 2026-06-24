@@ -252,3 +252,54 @@ export async function getFinancials(input: string): Promise<FinancialsResult> {
 
   return { corp, years };
 }
+
+/* ──────────────────────────────────────────────
+ * 3) 공시 내역 조회 (공시검색 list.json)
+ *    corp_code로 최근 3개월 공시 목록을 가져온다.
+ * ────────────────────────────────────────────── */
+export type Disclosure = {
+  report_nm: string; // 보고서명
+  rcept_dt: string; // 접수일자 YYYYMMDD
+  flr_nm: string; // 제출인
+  rcept_no: string; // 접수번호
+  url: string; // DART 원문 링크
+};
+
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
+export async function getDisclosures(corpCode: string): Promise<Disclosure[]> {
+  const key = getKey();
+  const end = new Date();
+  const begin = new Date();
+  begin.setMonth(begin.getMonth() - 3); // 최근 3개월
+
+  const url =
+    `${DART_BASE}/list.json?crtfc_key=${key}&corp_code=${corpCode}` +
+    `&bgn_de=${ymd(begin)}&end_de=${ymd(end)}&page_count=15&page_no=1`;
+
+  let data: { status?: string; list?: Record<string, string>[] };
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    data = await res.json();
+  } catch {
+    return [];
+  }
+  if (data.status !== "000" || !Array.isArray(data.list)) return [];
+
+  return data.list.map((d) => {
+    const rcept_no = (d.rcept_no ?? "").trim();
+    return {
+      report_nm: (d.report_nm ?? "").trim(),
+      rcept_dt: (d.rcept_dt ?? "").trim(),
+      flr_nm: (d.flr_nm ?? "").trim(),
+      rcept_no,
+      url: `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rcept_no}`,
+    };
+  });
+}

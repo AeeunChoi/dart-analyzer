@@ -21,9 +21,26 @@ type CorpMatch = {
   listed: boolean;
 };
 
+type Disclosure = {
+  report_nm: string;
+  rcept_dt: string;
+  flr_nm: string;
+  rcept_no: string;
+  url: string;
+};
+
+type NewsItem = {
+  title: string;
+  link: string;
+  pubDate: string;
+  source: string;
+};
+
 type ApiResult = {
   corp?: CorpMatch;
   years?: YearFinancials[];
+  disclosures?: Disclosure[];
+  news?: NewsItem[];
   error?: string;
 };
 
@@ -80,8 +97,25 @@ const GROWTH_ITEMS: { key: keyof YearFinancials; label: string }[] = [
   { key: "netIncome", label: "당기순이익" },
 ];
 
+/* ── 날짜 포맷 ── */
+function fmtYmd(s: string): string {
+  // YYYYMMDD → YYYY.MM.DD
+  if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}`;
+  return s;
+}
+function fmtNewsDate(s: string): string {
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("ko-KR");
+}
+
 /* ── ⑤ AI 분석용 프롬프트 자동 생성 (API 비용 없이 복사해서 사용) ── */
-function buildAnalysisPrompt(corp: CorpMatch, years: YearFinancials[]): string {
+function buildAnalysisPrompt(
+  corp: CorpMatch,
+  years: YearFinancials[],
+  disclosures: Disclosure[],
+  news: NewsItem[]
+): string {
   const basis = years[0]?.fsDiv === "CFS" ? "연결" : "별도";
   const col = (label: string, fn: (y: YearFinancials) => string) =>
     [label, ...years.map(fn)].join(" | ");
@@ -109,24 +143,37 @@ function buildAnalysisPrompt(corp: CorpMatch, years: YearFinancials[]): string {
     }),
   ].join("\n");
 
+  const disclosureBlock =
+    disclosures.length > 0
+      ? "\n\n[최근 3개월 주요 공시]\n" +
+        disclosures.slice(0, 12).map((d) => `- ${fmtYmd(d.rcept_dt)} ${d.report_nm} (${d.flr_nm})`).join("\n")
+      : "";
+
+  const newsBlock =
+    news.length > 0
+      ? "\n\n[최근 3개월 관련 뉴스 헤드라인]\n" +
+        news.slice(0, 10).map((n) => `- ${n.title}`).join("\n")
+      : "";
+
   return `당신은 신중하고 균형 잡힌 기업 재무 분석가입니다.
 아래는 금융감독원 Open DART에서 가져온 '${corp.corp_name}'${
     corp.stock_code ? `(종목코드 ${corp.stock_code})` : ""
-}의 최근 ${years.length}개년 ${basis} 기준 재무 데이터입니다. (단위: 억원)
+}의 최근 ${years.length}개년 ${basis} 기준 재무 데이터와, 최근 공시·뉴스입니다. (재무 단위: 억원)
 
-${table}
+${table}${disclosureBlock}${newsBlock}
 
-위 데이터를 근거로 다음을 한국어로 분석해 주세요.
+위 자료를 근거로 다음을 한국어로 분석해 주세요.
 
 1. 이 재무 추세가 주가가치에 미칠 영향 — 긍정 요인과 부정 요인을 나눠서.
 2. 향후 현금 흐름 및 자금 사정 전망 — 영업활동현금흐름 추이와 부채 수준을 근거로.
-3. 투자자가 주의해야 할 리스크 포인트.
+3. 최근 공시·뉴스가 시사하는 이벤트 리스크나 변화 — 위 공시/헤드라인을 근거로.
+4. 투자자가 주의해야 할 리스크 포인트.
 
 [작성 규칙]
-- 모든 추론은 위 숫자 중 무엇을 근거로 했는지 함께 밝혀 주세요.
+- 모든 추론은 위 자료 중 무엇을 근거로 했는지 함께 밝혀 주세요.
 - "반드시", "확실히" 같은 단정 대신 "가능성이 있다" 처럼 신중하게 서술해 주세요.
-- 이 분석은 참고용이며 투자 권유가 아님을 마지막에 한 줄로 명시해 주세요.
-- 데이터에 없는 사실(뉴스·시장점유율 등)은 추측하지 말고, 필요하면 "추가 확인 필요"로 표시해 주세요.`;
+- 뉴스 헤드라인은 제목만 제공되므로, 본문을 단정하지 말고 "헤드라인상" 같은 표현으로 신중히 다뤄 주세요.
+- 이 분석은 참고용이며 투자 권유가 아님을 마지막에 한 줄로 명시해 주세요.`;
 }
 
 /* ── ⚡ 규칙 기반 한눈에 보기 (AI 없이 즉석 코멘트) ── */
@@ -215,6 +262,8 @@ export default function Home() {
   }
 
   const years = result?.years ?? [];
+  const disclosures = result?.disclosures ?? [];
+  const news = result?.news ?? [];
   // 매출 추이 막대그래프용 최대값
   const maxRevenue = Math.max(...years.map((y) => y.revenue ?? 0), 1);
   // 성장성: 최신연도(years[0]) vs 직전연도(years[1])
@@ -409,9 +458,65 @@ export default function Home() {
               </div>
             </section>
 
-            {/* 5. 한눈에 보기 (규칙 기반, 무료) */}
+            {/* 5. 주요 공시 (최근 3개월) */}
             <section>
-              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑤ 한눈에 보기 (자동 요약)</h3>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑤ 주요 공시 (최근 3개월)</h3>
+              {disclosures.length === 0 ? (
+                <p className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">
+                  최근 3개월 내 공시를 찾지 못했습니다.
+                </p>
+              ) : (
+                <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                  {disclosures.map((d) => (
+                    <li key={d.rcept_no} className="flex items-center gap-3 px-4 py-3 text-sm">
+                      <span className="w-24 shrink-0 text-xs text-zinc-500">{fmtYmd(d.rcept_dt)}</span>
+                      <a
+                        href={d.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 text-zinc-800 hover:text-blue-600 hover:underline dark:text-zinc-200"
+                      >
+                        {d.report_nm}
+                      </a>
+                      <span className="hidden shrink-0 text-xs text-zinc-400 sm:block">{d.flr_nm}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* 6. 최근 뉴스 (3개월) */}
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑥ 최근 뉴스 (3개월)</h3>
+              {news.length === 0 ? (
+                <p className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">
+                  관련 뉴스를 찾지 못했습니다.
+                </p>
+              ) : (
+                <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                  {news.map((n, i) => (
+                    <li key={i} className="px-4 py-3 text-sm">
+                      <a
+                        href={n.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-zinc-800 hover:text-blue-600 hover:underline dark:text-zinc-200"
+                      >
+                        {n.title}
+                      </a>
+                      <div className="mt-1 flex gap-2 text-xs text-zinc-400">
+                        {n.source && <span>{n.source}</span>}
+                        {n.pubDate && <span>· {fmtNewsDate(n.pubDate)}</span>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* 7. 한눈에 보기 (규칙 기반, 무료) */}
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑦ 한눈에 보기 (자동 요약)</h3>
               <ul className="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                 {quickRead(years).map((line, i) => (
                   <li key={i} className="flex gap-2 text-sm text-zinc-700 dark:text-zinc-300">
@@ -424,7 +529,7 @@ export default function Home() {
 
             {/* 6. AI 분석 프롬프트 (API 비용 없이 복사해서 사용) */}
             <section>
-              <h3 className="mb-1 text-sm font-semibold text-zinc-500">⑥ AI 심층 분석 (무료)</h3>
+              <h3 className="mb-1 text-sm font-semibold text-zinc-500">⑧ AI 심층 분석 (무료)</h3>
               <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
                 아래 버튼으로 분석 프롬프트를 복사한 뒤,{" "}
                 <a
@@ -451,7 +556,7 @@ export default function Home() {
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
                   <span className="text-xs text-zinc-500">분석 요청 프롬프트</span>
                   <button
-                    onClick={() => copyPrompt(buildAnalysisPrompt(result.corp!, years))}
+                    onClick={() => copyPrompt(buildAnalysisPrompt(result.corp!, years, disclosures, news))}
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
                   >
                     {copied ? "✓ 복사됨!" : "📋 프롬프트 복사"}
@@ -459,7 +564,7 @@ export default function Home() {
                 </div>
                 <textarea
                   readOnly
-                  value={buildAnalysisPrompt(result.corp, years)}
+                  value={buildAnalysisPrompt(result.corp, years, disclosures, news)}
                   className="h-48 w-full resize-none bg-transparent p-4 font-mono text-xs text-zinc-700 outline-none dark:text-zinc-300"
                 />
               </div>
