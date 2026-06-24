@@ -27,11 +27,26 @@ type ApiResult = {
   error?: string;
 };
 
-// 원(￦) 단위 큰 숫자를 "억원"으로 읽기 쉽게 변환
+/* ── 숫자 포맷 ───────────────────────────── */
+// 원 단위 큰 숫자를 "억"으로 변환
 function toEok(value: number | null): string {
   if (value === null) return "—";
-  const eok = value / 1e8;
-  return eok.toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "억";
+  return (value / 1e8).toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "억";
+}
+function pct(n: number | null): string {
+  if (n === null) return "—";
+  const sign = n > 0 ? "+" : "";
+  return sign + n.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) + "%";
+}
+
+/* ── 비율 계산 ───────────────────────────── */
+function ratio(numer: number | null, denom: number | null): number | null {
+  if (numer === null || denom === null || denom === 0) return null;
+  return (numer / denom) * 100;
+}
+function growth(curr: number | null, prev: number | null): number | null {
+  if (curr === null || prev === null || prev === 0) return null;
+  return ((curr - prev) / Math.abs(prev)) * 100;
 }
 
 const METRIC_ROWS: { key: keyof YearFinancials; label: string }[] = [
@@ -42,6 +57,27 @@ const METRIC_ROWS: { key: keyof YearFinancials; label: string }[] = [
   { key: "liabilities", label: "부채총계" },
   { key: "equity", label: "자본총계" },
   { key: "operatingCashFlow", label: "영업활동현금흐름" },
+];
+
+// 수익성·안정성 비율 (높을수록 좋음 good:"high" / 낮을수록 좋음 good:"low")
+const RATIO_ROWS: {
+  label: string;
+  desc: string;
+  good: "high" | "low";
+  calc: (y: YearFinancials) => number | null;
+}[] = [
+  { label: "영업이익률", desc: "매출 대비 영업이익", good: "high", calc: (y) => ratio(y.operatingIncome, y.revenue) },
+  { label: "순이익률", desc: "매출 대비 당기순이익", good: "high", calc: (y) => ratio(y.netIncome, y.revenue) },
+  { label: "ROE", desc: "자본 대비 순이익(자기자본이익률)", good: "high", calc: (y) => ratio(y.netIncome, y.equity) },
+  { label: "부채비율", desc: "자본 대비 부채(낮을수록 안정)", good: "low", calc: (y) => ratio(y.liabilities, y.equity) },
+  { label: "자기자본비율", desc: "자산 중 자기자본 비중", good: "high", calc: (y) => ratio(y.equity, y.assets) },
+];
+
+// 성장성: 전년 대비 증가율 (years는 최신→과거 순)
+const GROWTH_ITEMS: { key: keyof YearFinancials; label: string }[] = [
+  { key: "revenue", label: "매출액" },
+  { key: "operatingIncome", label: "영업이익" },
+  { key: "netIncome", label: "당기순이익" },
 ];
 
 export default function Home() {
@@ -67,6 +103,11 @@ export default function Home() {
   }
 
   const years = result?.years ?? [];
+  // 매출 추이 막대그래프용 최대값
+  const maxRevenue = Math.max(...years.map((y) => y.revenue ?? 0), 1);
+  // 성장성: 최신연도(years[0]) vs 직전연도(years[1])
+  const latest = years[0];
+  const prev = years[1];
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-12 dark:bg-black">
@@ -76,10 +117,10 @@ export default function Home() {
             DART 재무 자동분석
           </p>
           <h1 className="mt-2 text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-            기업 재무제표 조회
+            기업 재무제표 조회 &amp; 비율 분석
           </h1>
           <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-            회사명 또는 6자리 종목코드를 입력하면 최근 3개년 핵심 재무 숫자를 보여드립니다.
+            회사명 또는 6자리 종목코드를 입력하면 최근 3개년 재무 숫자와 핵심 비율을 보여드립니다.
           </p>
         </header>
 
@@ -113,8 +154,9 @@ export default function Home() {
         )}
 
         {result?.corp && years.length > 0 && (
-          <section className="mt-8">
-            <div className="mb-3 flex items-baseline justify-between">
+          <div className="mt-8 space-y-10">
+            {/* 회사 헤더 */}
+            <div className="flex items-baseline justify-between">
               <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
                 {result.corp.corp_name}
                 {result.corp.stock_code && (
@@ -128,50 +170,137 @@ export default function Home() {
               </span>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-              <table className="w-full text-right text-sm">
-                <thead className="bg-zinc-100 dark:bg-zinc-900">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-zinc-700 dark:text-zinc-300">
-                      항목
-                    </th>
-                    {years.map((y) => (
-                      <th
-                        key={y.year}
-                        className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-300"
-                      >
-                        {y.year}
+            {/* 1. 원본 재무 숫자 */}
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">① 핵심 재무 숫자</h3>
+              <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+                <table className="w-full text-right text-sm">
+                  <thead className="bg-zinc-100 dark:bg-zinc-900">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-700 dark:text-zinc-300">
+                        항목
                       </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {METRIC_ROWS.map((row) => (
-                    <tr
-                      key={row.key}
-                      className="border-t border-zinc-200 dark:border-zinc-800"
-                    >
-                      <td className="px-4 py-3 text-left font-medium text-zinc-800 dark:text-zinc-200">
-                        {row.label}
-                      </td>
                       {years.map((y) => (
-                        <td
-                          key={y.year}
-                          className="px-4 py-3 tabular-nums text-zinc-700 dark:text-zinc-300"
-                        >
-                          {toEok(y[row.key] as number | null)}
-                        </td>
+                        <th key={y.year} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-300">
+                          {y.year}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {METRIC_ROWS.map((row) => (
+                      <tr key={row.key} className="border-t border-zinc-200 dark:border-zinc-800">
+                        <td className="px-4 py-3 text-left font-medium text-zinc-800 dark:text-zinc-200">
+                          {row.label}
+                        </td>
+                        {years.map((y) => (
+                          <td key={y.year} className="px-4 py-3 tabular-nums text-zinc-700 dark:text-zinc-300">
+                            {toEok(y[row.key] as number | null)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
 
-            <p className="mt-4 text-xs text-zinc-400">
+            {/* 2. 성장성 (전년 대비) */}
+            {prev && (
+              <section>
+                <h3 className="mb-3 text-sm font-semibold text-zinc-500">
+                  ② 성장성 · {latest.year} vs {prev.year} (전년 대비)
+                </h3>
+                <div className="grid grid-cols-3 gap-3">
+                  {GROWTH_ITEMS.map((item) => {
+                    const g = growth(latest[item.key] as number | null, prev[item.key] as number | null);
+                    const up = g !== null && g >= 0;
+                    return (
+                      <div
+                        key={item.key}
+                        className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800"
+                      >
+                        <p className="text-xs text-zinc-500">{item.label}</p>
+                        <p
+                          className={`mt-1 text-lg font-bold ${
+                            g === null
+                              ? "text-zinc-400"
+                              : up
+                              ? "text-emerald-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {pct(g)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* 3. 수익성·안정성 비율 */}
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">③ 수익성 · 안정성 비율</h3>
+              <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+                <table className="w-full text-right text-sm">
+                  <thead className="bg-zinc-100 dark:bg-zinc-900">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-zinc-700 dark:text-zinc-300">
+                        비율
+                      </th>
+                      {years.map((y) => (
+                        <th key={y.year} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-300">
+                          {y.year}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {RATIO_ROWS.map((row) => (
+                      <tr key={row.label} className="border-t border-zinc-200 dark:border-zinc-800">
+                        <td className="px-4 py-3 text-left">
+                          <span className="font-medium text-zinc-800 dark:text-zinc-200">{row.label}</span>
+                          <span className="ml-2 text-xs text-zinc-400">{row.desc}</span>
+                        </td>
+                        {years.map((y) => (
+                          <td key={y.year} className="px-4 py-3 tabular-nums text-zinc-700 dark:text-zinc-300">
+                            {row.calc(y) === null
+                              ? "—"
+                              : row.calc(y)!.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) + "%"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* 4. 매출 추이 막대그래프 */}
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">④ 매출액 추이</h3>
+              <div className="space-y-2">
+                {[...years].reverse().map((y) => (
+                  <div key={y.year} className="flex items-center gap-3">
+                    <span className="w-12 text-xs text-zinc-500">{y.year}</span>
+                    <div className="h-6 flex-1 rounded bg-zinc-100 dark:bg-zinc-800">
+                      <div
+                        className="flex h-6 items-center justify-end rounded bg-blue-500 px-2 text-xs font-medium text-white"
+                        style={{ width: `${Math.max(((y.revenue ?? 0) / maxRevenue) * 100, 8)}%` }}
+                      >
+                        {toEok(y.revenue)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <p className="text-xs text-zinc-400">
               출처: 금융감독원 Open DART 사업보고서. 본 화면은 참고용이며 투자 권유가 아닙니다.
             </p>
-          </section>
+          </div>
         )}
       </div>
     </main>

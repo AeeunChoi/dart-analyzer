@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude code 개인 설정(승인 자동화 등) - 공개 저장소에 올리지 않음
+.claude/settings.local.json
