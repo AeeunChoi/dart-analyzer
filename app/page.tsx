@@ -80,10 +80,122 @@ const GROWTH_ITEMS: { key: keyof YearFinancials; label: string }[] = [
   { key: "netIncome", label: "당기순이익" },
 ];
 
+/* ── ⑤ AI 분석용 프롬프트 자동 생성 (API 비용 없이 복사해서 사용) ── */
+function buildAnalysisPrompt(corp: CorpMatch, years: YearFinancials[]): string {
+  const basis = years[0]?.fsDiv === "CFS" ? "연결" : "별도";
+  const col = (label: string, fn: (y: YearFinancials) => string) =>
+    [label, ...years.map(fn)].join(" | ");
+
+  const table = [
+    ["항목", ...years.map((y) => `${y.year}년`)].join(" | "),
+    col("매출액", (y) => toEok(y.revenue)),
+    col("영업이익", (y) => toEok(y.operatingIncome)),
+    col("당기순이익", (y) => toEok(y.netIncome)),
+    col("자산총계", (y) => toEok(y.assets)),
+    col("부채총계", (y) => toEok(y.liabilities)),
+    col("자본총계", (y) => toEok(y.equity)),
+    col("영업활동현금흐름", (y) => toEok(y.operatingCashFlow)),
+    col("영업이익률", (y) => {
+      const r = ratio(y.operatingIncome, y.revenue);
+      return r === null ? "—" : r.toFixed(1) + "%";
+    }),
+    col("부채비율", (y) => {
+      const r = ratio(y.liabilities, y.equity);
+      return r === null ? "—" : r.toFixed(1) + "%";
+    }),
+    col("ROE", (y) => {
+      const r = ratio(y.netIncome, y.equity);
+      return r === null ? "—" : r.toFixed(1) + "%";
+    }),
+  ].join("\n");
+
+  return `당신은 신중하고 균형 잡힌 기업 재무 분석가입니다.
+아래는 금융감독원 Open DART에서 가져온 '${corp.corp_name}'${
+    corp.stock_code ? `(종목코드 ${corp.stock_code})` : ""
+}의 최근 ${years.length}개년 ${basis} 기준 재무 데이터입니다. (단위: 억원)
+
+${table}
+
+위 데이터를 근거로 다음을 한국어로 분석해 주세요.
+
+1. 이 재무 추세가 주가가치에 미칠 영향 — 긍정 요인과 부정 요인을 나눠서.
+2. 향후 현금 흐름 및 자금 사정 전망 — 영업활동현금흐름 추이와 부채 수준을 근거로.
+3. 투자자가 주의해야 할 리스크 포인트.
+
+[작성 규칙]
+- 모든 추론은 위 숫자 중 무엇을 근거로 했는지 함께 밝혀 주세요.
+- "반드시", "확실히" 같은 단정 대신 "가능성이 있다" 처럼 신중하게 서술해 주세요.
+- 이 분석은 참고용이며 투자 권유가 아님을 마지막에 한 줄로 명시해 주세요.
+- 데이터에 없는 사실(뉴스·시장점유율 등)은 추측하지 말고, 필요하면 "추가 확인 필요"로 표시해 주세요.`;
+}
+
+/* ── ⚡ 규칙 기반 한눈에 보기 (AI 없이 즉석 코멘트) ── */
+function quickRead(years: YearFinancials[]): string[] {
+  const out: string[] = [];
+  const latest = years[0];
+  const oldest = years[years.length - 1];
+
+  const revG = growth(latest.revenue, oldest.revenue);
+  if (revG !== null) {
+    out.push(
+      `매출은 ${oldest.year}년 → ${latest.year}년 사이 ${pct(revG)} ${
+        revG >= 0 ? "증가했습니다." : "감소했습니다."
+      }`
+    );
+  }
+
+  const opm = ratio(latest.operatingIncome, latest.revenue);
+  if (opm !== null) {
+    out.push(
+      `최근 영업이익률은 ${opm.toFixed(1)}%로, ${
+        opm >= 10 ? "수익성이 양호한 편입니다." : opm >= 0 ? "수익성이 보통 수준입니다." : "영업적자 상태입니다."
+      }`
+    );
+  }
+
+  const debt = ratio(latest.liabilities, latest.equity);
+  if (debt !== null) {
+    out.push(
+      `부채비율은 ${debt.toFixed(1)}%로, ${
+        debt < 100 ? "재무 안정성이 높은 편입니다." : debt < 200 ? "보통 수준입니다." : "부채 부담이 다소 높습니다."
+      }`
+    );
+  }
+
+  if (latest.netIncome !== null) {
+    out.push(
+      latest.netIncome >= 0
+        ? `${latest.year}년 당기순이익은 흑자(${toEok(latest.netIncome)})입니다.`
+        : `${latest.year}년 당기순이익은 적자(${toEok(latest.netIncome)})입니다.`
+    );
+  }
+
+  if (latest.operatingCashFlow !== null) {
+    out.push(
+      latest.operatingCashFlow >= 0
+        ? `영업활동현금흐름은 (+)로, 본업에서 현금이 들어오고 있습니다.`
+        : `영업활동현금흐름이 (−)로, 본업의 현금 창출에 주의가 필요합니다.`
+    );
+  }
+
+  return out;
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ApiResult | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copyPrompt(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   async function handleSearch(e?: React.FormEvent) {
     e?.preventDefault();
@@ -294,6 +406,62 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            {/* 5. 한눈에 보기 (규칙 기반, 무료) */}
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑤ 한눈에 보기 (자동 요약)</h3>
+              <ul className="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                {quickRead(years).map((line, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                    <span className="text-blue-500">•</span>
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* 6. AI 분석 프롬프트 (API 비용 없이 복사해서 사용) */}
+            <section>
+              <h3 className="mb-1 text-sm font-semibold text-zinc-500">⑥ AI 심층 분석 (무료)</h3>
+              <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+                아래 버튼으로 분석 프롬프트를 복사한 뒤,{" "}
+                <a
+                  href="https://claude.ai/new"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-blue-600 underline"
+                >
+                  Claude
+                </a>{" "}
+                나{" "}
+                <a
+                  href="https://chatgpt.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-blue-600 underline"
+                >
+                  ChatGPT
+                </a>{" "}
+                채팅창에 붙여넣으면 심층 분석글이 나옵니다. (별도 API 키·비용 불필요)
+              </p>
+
+              <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+                <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+                  <span className="text-xs text-zinc-500">분석 요청 프롬프트</span>
+                  <button
+                    onClick={() => copyPrompt(buildAnalysisPrompt(result.corp!, years))}
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                  >
+                    {copied ? "✓ 복사됨!" : "📋 프롬프트 복사"}
+                  </button>
+                </div>
+                <textarea
+                  readOnly
+                  value={buildAnalysisPrompt(result.corp, years)}
+                  className="h-48 w-full resize-none bg-transparent p-4 font-mono text-xs text-zinc-700 outline-none dark:text-zinc-300"
+                />
               </div>
             </section>
 
