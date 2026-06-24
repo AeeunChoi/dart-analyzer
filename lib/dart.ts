@@ -40,6 +40,23 @@ function toMatch(e: CorpEntry): CorpMatch {
   };
 }
 
+/** 자동완성용: 입력어로 시작/포함되는 상장사를 최대 limit개 돌려준다. */
+export function searchCorps(q: string, limit = 8): { corp_name: string; stock_code: string }[] {
+  const s = q.trim();
+  if (!s) return [];
+  const lower = s.toLowerCase();
+  const starts: CorpEntry[] = [];
+  const contains: CorpEntry[] = [];
+  for (const e of CORP_LIST) {
+    const nl = e.corp_name.toLowerCase();
+    if (nl.startsWith(lower) || e.stock_code === s) starts.push(e);
+    else if (nl.includes(lower)) contains.push(e);
+  }
+  return [...starts, ...contains]
+    .slice(0, limit)
+    .map((e) => ({ corp_name: e.corp_name, stock_code: e.stock_code }));
+}
+
 /** 회사명 / 6자리 종목코드 / 8자리 고유번호 무엇이 들어와도 회사를 찾아준다. */
 export function findCorp(input: string): CorpMatch | null {
   const q = input.trim();
