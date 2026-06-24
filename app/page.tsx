@@ -44,6 +44,13 @@ type ApiResult = {
   error?: string;
 };
 
+type AiAnalysis = {
+  disclosureSummary: string;
+  newsSummary: string;
+  stockImpact: string;
+  overall: string;
+};
+
 /* ── 숫자 포맷 ───────────────────────────── */
 // 원 단위 큰 숫자를 "억"으로 변환
 function toEok(value: number | null): string {
@@ -228,11 +235,76 @@ function quickRead(years: YearFinancials[]): string[] {
   return out;
 }
 
+// AI(Gemini) 분석 결과 박스 — 로딩/에러/내용 상태를 함께 처리
+function AiBox({
+  loading,
+  error,
+  text,
+  label = "AI 요약",
+}: {
+  loading: boolean;
+  error: string | null;
+  text?: string;
+  label?: string;
+}) {
+  if (loading) {
+    return (
+      <p className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-700 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300">
+        🤖 AI가 분석 중입니다…
+      </p>
+    );
+  }
+  if (error) {
+    return (
+      <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+        AI 분석을 불러오지 못했습니다: {error}
+      </p>
+    );
+  }
+  if (!text) return null;
+  return (
+    <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 dark:border-violet-900 dark:bg-violet-950/50">
+      <span className="mb-1 inline-block rounded bg-violet-200 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800 dark:bg-violet-800 dark:text-violet-100">
+        {label}
+      </span>
+      <p className="whitespace-pre-line text-sm leading-6 text-violet-900 dark:text-violet-200">{text}</p>
+    </div>
+  );
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ApiResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [ai, setAi] = useState<AiAnalysis | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  async function fetchAnalysis(data: ApiResult) {
+    setAi(null);
+    setAiError(null);
+    setAiLoading(true);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          corp: data.corp,
+          years: data.years,
+          disclosures: data.disclosures ?? [],
+          news: data.news ?? [],
+        }),
+      });
+      const json = await res.json();
+      if (json.error) setAiError(json.error);
+      else setAi(json as AiAnalysis);
+    } catch {
+      setAiError("AI 분석 요청에 실패했습니다.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   async function copyPrompt(text: string) {
     try {
@@ -250,10 +322,16 @@ export default function Home() {
     if (!q || loading) return;
     setLoading(true);
     setResult(null);
+    setAi(null);
+    setAiError(null);
     try {
       const res = await fetch(`/api/financials?name=${encodeURIComponent(q)}`);
       const data: ApiResult = await res.json();
       setResult(data);
+      // 재무 조회에 성공하면 AI 분석을 이어서 자동 실행
+      if (data.corp && data.years && data.years.length > 0) {
+        fetchAnalysis(data);
+      }
     } catch {
       setResult({ error: "요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요." });
     } finally {
@@ -483,6 +561,9 @@ export default function Home() {
                   ))}
                 </ul>
               )}
+              <div className="mt-3">
+                <AiBox loading={aiLoading} error={aiError} text={ai?.disclosureSummary} label="AI 공시 요약" />
+              </div>
             </section>
 
             {/* 6. 최근 뉴스 (3개월) */}
@@ -512,6 +593,9 @@ export default function Home() {
                   ))}
                 </ul>
               )}
+              <div className="mt-3">
+                <AiBox loading={aiLoading} error={aiError} text={ai?.newsSummary} label="AI 뉴스 요약" />
+              </div>
             </section>
 
             {/* 7. 한눈에 보기 (규칙 기반, 무료) */}
@@ -525,6 +609,12 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+              <div className="mt-3 space-y-3">
+                <AiBox loading={aiLoading} error={aiError} text={ai?.overall} label="AI 종합" />
+                {ai?.stockImpact && (
+                  <AiBox loading={false} error={null} text={ai.stockImpact} label="AI 주가 영향 검토" />
+                )}
+              </div>
             </section>
 
             {/* 6. AI 분석 프롬프트 (API 비용 없이 복사해서 사용) */}
