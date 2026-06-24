@@ -1,4 +1,4 @@
-import { unzipSync, strFromU8 } from "fflate";
+import corpMapRaw from "./corp-map.json";
 
 const DART_BASE = "https://opendart.fss.or.kr/api";
 
@@ -14,38 +14,15 @@ function getKey(): string {
 
 /* ──────────────────────────────────────────────
  * 1) 회사명 → corp_code(8자리) 매핑
- *    DART가 주는 corpCode.zip을 받아 압축을 풀고,
- *    그 안의 XML을 파싱해 (회사명, 고유번호, 종목코드) 목록을 만든다.
- *    한 번 받으면 메모리에 캐시해 재사용한다.
+ *    빌드 시 미리 만들어둔 상장사 목록(lib/corp-map.json)을 사용한다.
+ *    (목록 생성/갱신: node scripts/build-corp-map.mjs)
+ *    → 조회 때마다 20MB 파일을 받지 않으므로 빠르고 시간 초과가 없다.
  * ────────────────────────────────────────────── */
 type CorpEntry = { corp_code: string; corp_name: string; stock_code: string };
-let corpCache: CorpEntry[] | null = null;
 
-async function getCorpList(): Promise<CorpEntry[]> {
-  if (corpCache) return corpCache;
-  const key = getKey();
-  const res = await fetch(`${DART_BASE}/corpCode.xml?crtfc_key=${key}`);
-  if (!res.ok) throw new Error(`DART 고유번호 파일 다운로드 실패 (HTTP ${res.status})`);
-
-  const buf = new Uint8Array(await res.arrayBuffer());
-  const files = unzipSync(buf);
-  const xmlName = Object.keys(files).find((n) => n.toLowerCase().endsWith(".xml"));
-  if (!xmlName) throw new Error("고유번호 압축파일 안에 XML이 없습니다.");
-  const xml = strFromU8(files[xmlName]);
-
-  const entries: CorpEntry[] = [];
-  const re = /<list>([\s\S]*?)<\/list>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) {
-    const block = m[1];
-    const corp_code = (block.match(/<corp_code>([\s\S]*?)<\/corp_code>/)?.[1] ?? "").trim();
-    const corp_name = (block.match(/<corp_name>([\s\S]*?)<\/corp_name>/)?.[1] ?? "").trim();
-    const stock_code = (block.match(/<stock_code>([\s\S]*?)<\/stock_code>/)?.[1] ?? "").trim();
-    if (corp_code) entries.push({ corp_code, corp_name, stock_code });
-  }
-  corpCache = entries;
-  return entries;
-}
+const CORP_LIST: CorpEntry[] = (corpMapRaw as { c: string; n: string; s: string }[]).map(
+  (e) => ({ corp_code: e.c, corp_name: e.n, stock_code: e.s })
+);
 
 export type CorpMatch = {
   corp_code: string;
@@ -64,10 +41,10 @@ function toMatch(e: CorpEntry): CorpMatch {
 }
 
 /** 회사명 / 6자리 종목코드 / 8자리 고유번호 무엇이 들어와도 회사를 찾아준다. */
-export async function findCorp(input: string): Promise<CorpMatch | null> {
+export function findCorp(input: string): CorpMatch | null {
   const q = input.trim();
   if (!q) return null;
-  const list = await getCorpList();
+  const list = CORP_LIST;
 
   if (/^\d{6}$/.test(q)) {
     const byStock = list.find((e) => e.stock_code === q);
@@ -250,7 +227,7 @@ export type FinancialsResult =
 
 /** 회사명/코드를 받아 최근 사업보고서 기준 데이터가 있는 3개년을 모아 반환한다. */
 export async function getFinancials(input: string): Promise<FinancialsResult> {
-  const corp = await findCorp(input);
+  const corp = findCorp(input);
   if (!corp) {
     return {
       error:
@@ -258,13 +235,14 @@ export async function getFinancials(input: string): Promise<FinancialsResult> {
     };
   }
 
+  // 최근 5개년 후보를 동시에 조회한 뒤, 데이터가 있는 최신 3개년만 사용
   const currentYear = new Date().getFullYear();
-  const years: YearFinancials[] = [];
-  // 최근 연도부터 거슬러 올라가며 데이터가 있는 3개년 수집
-  for (let y = currentYear - 1; y >= currentYear - 7 && years.length < 3; y--) {
-    const yf = await fetchYear(corp.corp_code, y);
-    if (yf) years.push(yf);
-  }
+  const candidateYears = [1, 2, 3, 4, 5].map((d) => currentYear - d);
+  const fetched = await Promise.all(candidateYears.map((y) => fetchYear(corp.corp_code, y)));
+  const years = fetched
+    .filter((y): y is YearFinancials => y !== null)
+    .sort((a, b) => b.year - a.year)
+    .slice(0, 3);
 
   if (years.length === 0) {
     return {
