@@ -1,6 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
+
+// 차트는 SSR 충돌을 피하려 클라이언트에서만 로드
+const FinancialCharts = dynamic(() => import("./FinancialCharts"), {
+  ssr: false,
+  loading: () => <p className="py-8 text-center text-sm text-zinc-400">차트 로딩 중…</p>,
+});
 
 type YearFinancials = {
   year: number;
@@ -342,8 +349,6 @@ export default function Home() {
   const years = result?.years ?? [];
   const disclosures = result?.disclosures ?? [];
   const news = result?.news ?? [];
-  // 매출 추이 막대그래프용 최대값
-  const maxRevenue = Math.max(...years.map((y) => y.revenue ?? 0), 1);
   // 성장성: 최신연도(years[0]) vs 직전연도(years[1])
   const latest = years[0];
   const prev = years[1];
@@ -442,6 +447,9 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+              <div className="mt-6">
+                <FinancialCharts years={years} />
+              </div>
             </section>
 
             {/* 2. 성장성 (전년 대비) */}
@@ -516,29 +524,9 @@ export default function Home() {
               </div>
             </section>
 
-            {/* 4. 매출 추이 막대그래프 */}
+            {/* 4. 주요 공시 (최근 3개월) */}
             <section>
-              <h3 className="mb-3 text-sm font-semibold text-zinc-500">④ 매출액 추이</h3>
-              <div className="space-y-2">
-                {[...years].reverse().map((y) => (
-                  <div key={y.year} className="flex items-center gap-3">
-                    <span className="w-12 text-xs text-zinc-500">{y.year}</span>
-                    <div className="h-6 flex-1 rounded bg-zinc-100 dark:bg-zinc-800">
-                      <div
-                        className="flex h-6 items-center justify-end rounded bg-blue-500 px-2 text-xs font-medium text-white"
-                        style={{ width: `${Math.max(((y.revenue ?? 0) / maxRevenue) * 100, 8)}%` }}
-                      >
-                        {toEok(y.revenue)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* 5. 주요 공시 (최근 3개월) */}
-            <section>
-              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑤ 주요 공시 (최근 3개월)</h3>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">④ 주요 공시 (최근 3개월)</h3>
               {disclosures.length === 0 ? (
                 <p className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">
                   최근 3개월 내 공시를 찾지 못했습니다.
@@ -568,7 +556,7 @@ export default function Home() {
 
             {/* 6. 최근 뉴스 (3개월) */}
             <section>
-              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑥ 최근 뉴스 (3개월)</h3>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑤ 최근 뉴스 (3개월)</h3>
               {news.length === 0 ? (
                 <p className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">
                   관련 뉴스를 찾지 못했습니다.
@@ -600,7 +588,7 @@ export default function Home() {
 
             {/* 7. 한눈에 보기 (규칙 기반, 무료) */}
             <section>
-              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑦ 한눈에 보기 (자동 요약)</h3>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-500">⑥ 한눈에 보기 (자동 요약)</h3>
               <ul className="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                 {quickRead(years).map((line, i) => (
                   <li key={i} className="flex gap-2 text-sm text-zinc-700 dark:text-zinc-300">
@@ -619,7 +607,7 @@ export default function Home() {
 
             {/* 6. AI 분석 프롬프트 (API 비용 없이 복사해서 사용) */}
             <section>
-              <h3 className="mb-1 text-sm font-semibold text-zinc-500">⑧ AI 심층 분석 (무료)</h3>
+              <h3 className="mb-1 text-sm font-semibold text-zinc-500">⑦ AI 심층 분석 프롬프트 (복사용)</h3>
               <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
                 아래 버튼으로 분석 프롬프트를 복사한 뒤,{" "}
                 <a
