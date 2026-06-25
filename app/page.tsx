@@ -51,6 +51,8 @@ type ApiResult = {
 };
 type AiAnalysis = { disclosureSummary: string; newsSummary: string; stockImpact: string; overall: string };
 type Suggestion = { corp_name: string; stock_code: string };
+type Rank = { name: string; code: string; value: number };
+type Rankings = { date: string; marketCap: Rank[]; volume: Rank[]; tradeValue: Rank[] };
 
 /* ── 숫자/날짜 포맷 ───────────────────── */
 function toEok(value: number | null): string {
@@ -70,6 +72,19 @@ function fmtNewsDate(s: string): string {
   const d = new Date(s);
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("ko-KR");
 }
+function fmtJoEok(v: number): string {
+  if (v >= 1e12) return (v / 1e12).toLocaleString("ko-KR", { maximumFractionDigits: 1 }) + "조";
+  return Math.round(v / 1e8).toLocaleString("ko-KR") + "억";
+}
+function fmtVol(v: number): string {
+  if (v >= 1e4) return Math.round(v / 1e4).toLocaleString("ko-KR") + "만주";
+  return v.toLocaleString("ko-KR") + "주";
+}
+const RANK_TABS: { id: "marketCap" | "volume" | "tradeValue"; label: string; fmt: (v: number) => string }[] = [
+  { id: "marketCap", label: "시가총액", fmt: fmtJoEok },
+  { id: "volume", label: "거래량", fmt: fmtVol },
+  { id: "tradeValue", label: "거래대금", fmt: fmtJoEok },
+];
 
 /* ── 색코딩(좋음 초록 / 주의 주황 / 나쁨 빨강) ── */
 const DEFAULT_NUM = "text-zinc-700 dark:text-zinc-300";
@@ -452,6 +467,18 @@ export default function Home() {
   const [tab, setTab] = useState<TabId>("fin");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggest, setShowSuggest] = useState(false);
+  const [rankings, setRankings] = useState<Rankings | null>(null);
+  const [rankTab, setRankTab] = useState<"marketCap" | "volume" | "tradeValue">("marketCap");
+
+  // 첫 화면 순위(시총·거래량·거래대금) 1회 로드
+  useEffect(() => {
+    fetch("/api/rankings")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j.error) setRankings(j as Rankings);
+      })
+      .catch(() => {});
+  }, []);
 
   // 자동완성: 입력 변화 시 디바운스 후 후보 조회
   useEffect(() => {
@@ -630,6 +657,54 @@ export default function Home() {
                 {name}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* 첫 화면 순위 위젯 */}
+        {!result && !loading && rankings && (
+          <div className="mt-8">
+            <div className="mb-3 flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-200">📈 오늘의 순위</h2>
+              <span className="text-xs text-zinc-400">{fmtYmd(rankings.date)} 기준</span>
+            </div>
+            <div className="rounded-2xl border border-zinc-200/70 bg-white p-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-1 flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
+                {RANK_TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setRankTab(t.id)}
+                    className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                      rankTab === t.id
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <ol className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {rankings[rankTab].map((r, i) => (
+                  <li key={r.code}>
+                    <button
+                      onClick={() => {
+                        setQuery(r.name);
+                        runSearch(r.code);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-blue-50 dark:hover:bg-zinc-800"
+                    >
+                      <span className={`w-5 text-center font-bold ${i < 3 ? "text-blue-600" : "text-zinc-400"}`}>
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 text-left font-medium text-zinc-800 dark:text-zinc-200">{r.name}</span>
+                      <span className="tabular-nums text-zinc-500">
+                        {RANK_TABS.find((t) => t.id === rankTab)!.fmt(r.value)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
         )}
 
