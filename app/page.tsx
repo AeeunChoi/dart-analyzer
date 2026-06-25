@@ -249,8 +249,11 @@ function Skeleton() {
 /* ── 섹션 카드 래퍼 ───────────────────── */
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <h3 className="mb-4 text-sm font-semibold text-zinc-500">{title}</h3>
+    <section className="rounded-2xl border border-zinc-200/70 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.06)] dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none">
+      <h3 className="mb-5 flex items-center gap-2 text-[15px] font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+        <span className="h-4 w-1 rounded-full bg-blue-500" />
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -365,16 +368,18 @@ export default function Home() {
   const EXAMPLES = ["삼성전자", "카카오", "NAVER", "현대차", "셀트리온"];
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-6 py-12 dark:bg-black">
-      <div className="mx-auto max-w-3xl">
+    <main className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100/50 px-4 py-12 dark:from-black dark:to-zinc-950 sm:px-6">
+      <div className="mx-auto max-w-4xl">
         {/* 헤더 */}
         <header className="text-center">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-600/10 px-3 py-1 text-xs font-semibold text-blue-600">
+          <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-blue-600/10 px-3 py-1 text-xs font-semibold text-blue-600">
             <span>📊</span> DART 재무 자동분석
           </div>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">기업 재무·공시·뉴스 분석</h1>
-          <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-            회사명/종목코드를 입력하면 재무비율·공시·뉴스와 AI 분석을 한 번에 보여드립니다.
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
+            투자 판단 한눈에 보기
+          </h1>
+          <p className="mt-3 text-[15px] text-zinc-500 dark:text-zinc-400">
+            회사명만 넣으면 재무·비율·공시·뉴스·AI 분석을 한 화면에 모아드립니다.
           </p>
         </header>
 
@@ -397,7 +402,7 @@ export default function Home() {
               onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
               onBlur={() => setTimeout(() => setShowSuggest(false), 150)}
               placeholder="예: 삼성전자 또는 005930"
-              className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3.5 text-zinc-900 shadow-sm outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
             {showSuggest && suggestions.length > 0 && (
               <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
@@ -420,7 +425,7 @@ export default function Home() {
           <button
             type="submit"
             disabled={loading}
-            className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-xl bg-blue-600 px-6 py-3.5 font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? "조회중…" : "조회"}
           </button>
@@ -455,28 +460,33 @@ export default function Home() {
         {result?.corp && years.length > 0 && (
           <div className="mt-8">
             {/* 회사 헤더 */}
-            <div className="mb-5 flex items-baseline justify-between">
-              <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-                {result.corp.corp_name}
-                {result.corp.stock_code && (
-                  <span className="ml-2 text-sm font-normal text-zinc-500">({result.corp.stock_code})</span>
-                )}
-              </h2>
-              <span className="text-xs text-zinc-500">
-                {latest?.fsDiv === "CFS" ? "연결 기준" : "별도 기준"} · 단위: 억원
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200/70 bg-white px-6 py-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600/10 text-lg font-bold text-blue-600">
+                  {result.corp.corp_name.slice(0, 1)}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">{result.corp.corp_name}</h2>
+                  {result.corp.stock_code && (
+                    <span className="text-sm text-zinc-500">KRX · {result.corp.stock_code}</span>
+                  )}
+                </div>
+              </div>
+              <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800">
+                {latest?.fsDiv === "CFS" ? "연결 기준" : "별도 기준"} · 단위 억원
               </span>
             </div>
 
             {/* 탭 바 */}
-            <div className="mb-5 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
+            <div className="mb-5 flex gap-1 rounded-xl border border-zinc-200/70 bg-white p-1 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               {TABS.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
-                  className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all ${
                     tab === t.id
-                      ? "bg-white text-blue-600 shadow-sm dark:bg-zinc-700 dark:text-white"
-                      : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                   }`}
                 >
                   {t.label}
@@ -487,7 +497,7 @@ export default function Home() {
             {/* ───── 재무 탭 ───── */}
             {tab === "fin" && (
               <div className="space-y-6">
-                <Card title="① 핵심 재무 숫자">
+                <Card title="핵심 재무 숫자">
                   <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
                     <table className="w-full text-right text-sm">
                       <thead className="bg-zinc-100 dark:bg-zinc-800/60">
@@ -522,7 +532,7 @@ export default function Home() {
                 </Card>
 
                 {prev && (
-                  <Card title={`② 성장성 · ${latest.year} vs ${prev.year} (전년 대비)`}>
+                  <Card title={`성장성 · ${latest.year} vs ${prev.year} (전년 대비)`}>
                     <div className="grid grid-cols-3 gap-3">
                       {GROWTH_ITEMS.map((item) => {
                         const g = growth(latest[item.key] as number | null, prev[item.key] as number | null);
@@ -540,7 +550,7 @@ export default function Home() {
                   </Card>
                 )}
 
-                <Card title="③ 수익성 · 안정성 비율">
+                <Card title="수익성 · 안정성 비율">
                   <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
                     <table className="w-full text-right text-sm">
                       <thead className="bg-zinc-100 dark:bg-zinc-800/60">
@@ -580,7 +590,7 @@ export default function Home() {
             {/* ───── 공시·뉴스 탭 ───── */}
             {tab === "disc" && (
               <div className="space-y-6">
-                <Card title="④ 주요 공시 (최근 3개월)">
+                <Card title="주요 공시 (최근 3개월)">
                   {disclosures.length === 0 ? (
                     <p className="text-sm text-zinc-500">최근 3개월 내 공시를 찾지 못했습니다.</p>
                   ) : (
@@ -614,7 +624,7 @@ export default function Home() {
                   </div>
                 </Card>
 
-                <Card title="⑤ 최근 뉴스 (3개월)">
+                <Card title="최근 뉴스 (3개월)">
                   {news.length === 0 ? (
                     <p className="text-sm text-zinc-500">관련 뉴스를 찾지 못했습니다.</p>
                   ) : (
@@ -647,7 +657,7 @@ export default function Home() {
             {/* ───── AI 분석 탭 ───── */}
             {tab === "ai" && (
               <div className="space-y-6">
-                <Card title="⑥ 한눈에 보기 & 주가 영향">
+                <Card title="한눈에 보기 & 주가 영향">
                   <ul className="space-y-2">
                     {quickRead(years).map((line, i) => (
                       <li key={i} className="flex gap-2 text-sm text-zinc-700 dark:text-zinc-300">
@@ -662,7 +672,7 @@ export default function Home() {
                   </div>
                 </Card>
 
-                <Card title="⑦ AI 심층 분석 프롬프트 (복사용)">
+                <Card title="AI 심층 분석 프롬프트 (복사용)">
                   <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
                     아래 프롬프트를 복사해{" "}
                     <a href="https://claude.ai/new" target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 underline">
