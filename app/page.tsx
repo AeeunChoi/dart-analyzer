@@ -136,6 +136,116 @@ const GROWTH_ITEMS: { key: keyof YearFinancials; label: string }[] = [
   { key: "netIncome", label: "당기순이익" },
 ];
 
+/* ── 투자 점수(0~100) 산정 ────────────── */
+type CatScore = { key: string; label: string; score: number | null };
+type ScoreResult = { total: number; label: string; cats: CatScore[] };
+
+function avg(arr: number[]): number {
+  return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+}
+function scoreHex(s: number): string {
+  return s >= 75 ? "#10b981" : s >= 60 ? "#3b82f6" : s >= 45 ? "#f59e0b" : "#ef4444";
+}
+
+function sProfit(y: YearFinancials): number | null {
+  const s: number[] = [];
+  const opm = ratio(y.operatingIncome, y.revenue);
+  const roe = ratio(y.netIncome, y.equity);
+  if (opm !== null) s.push(opm < 0 ? 10 : opm < 5 ? 45 : opm < 10 ? 62 : opm < 15 ? 75 : opm < 20 ? 86 : 95);
+  if (roe !== null) s.push(roe < 0 ? 10 : roe < 5 ? 45 : roe < 10 ? 62 : roe < 15 ? 76 : roe < 20 ? 88 : 95);
+  return s.length ? avg(s) : null;
+}
+function sGrowth(years: YearFinancials[]): number | null {
+  const latest = years[0];
+  const oldest = years[years.length - 1];
+  const map = (g: number) => (g < -10 ? 25 : g < 0 ? 45 : g < 10 ? 60 : g < 25 ? 75 : g < 50 ? 86 : 95);
+  const s: number[] = [];
+  const rev = growth(latest.revenue, oldest.revenue);
+  const op = growth(latest.operatingIncome, oldest.operatingIncome);
+  if (rev !== null) s.push(map(rev));
+  if (op !== null) s.push(map(op));
+  return s.length ? avg(s) : null;
+}
+function sStable(y: YearFinancials): number | null {
+  const s: number[] = [];
+  const debt = ratio(y.liabilities, y.equity);
+  const eqr = ratio(y.equity, y.assets);
+  if (debt !== null) s.push(debt < 50 ? 95 : debt < 100 ? 84 : debt < 150 ? 70 : debt < 200 ? 55 : debt < 300 ? 38 : 20);
+  if (eqr !== null) s.push(eqr > 70 ? 92 : eqr > 50 ? 80 : eqr > 30 ? 66 : eqr > 20 ? 50 : 32);
+  return s.length ? avg(s) : null;
+}
+function sCash(y: YearFinancials): number | null {
+  const ocf = y.operatingCashFlow;
+  if (ocf === null) return null;
+  if (ocf < 0) return 25;
+  const m = ratio(ocf, y.revenue);
+  if (m === null) return 60;
+  return m < 5 ? 55 : m < 10 ? 70 : m < 15 ? 82 : 92;
+}
+function sValue(v: Valuation | null): number | null {
+  if (!v) return null;
+  const s: number[] = [];
+  if (v.loss) s.push(30);
+  else if (v.per !== null) s.push(v.per < 8 ? 92 : v.per < 12 ? 80 : v.per < 18 ? 68 : v.per < 25 ? 55 : v.per < 40 ? 42 : 30);
+  if (v.pbr !== null) s.push(v.pbr < 1 ? 92 : v.pbr < 1.5 ? 80 : v.pbr < 2.5 ? 66 : v.pbr < 4 ? 50 : 38);
+  return s.length ? avg(s) : null;
+}
+function calcScore(years: YearFinancials[], valuation: Valuation | null): ScoreResult | null {
+  if (!years.length) return null;
+  const y = years[0];
+  const cats: CatScore[] = [
+    { key: "profit", label: "수익성", score: sProfit(y) },
+    { key: "growth", label: "성장성", score: years.length > 1 ? sGrowth(years) : null },
+    { key: "stable", label: "안정성", score: sStable(y) },
+    { key: "cash", label: "현금흐름", score: sCash(y) },
+    { key: "value", label: "밸류에이션", score: sValue(valuation) },
+  ];
+  const weights: Record<string, number> = { profit: 25, growth: 20, stable: 20, cash: 15, value: 20 };
+  let acc = 0;
+  let wsum = 0;
+  for (const c of cats) {
+    if (c.score !== null) {
+      acc += c.score * weights[c.key];
+      wsum += weights[c.key];
+    }
+  }
+  if (wsum === 0) return null;
+  const total = Math.round(acc / wsum);
+  const label = total >= 75 ? "우수" : total >= 60 ? "양호" : total >= 45 ? "보통" : total >= 30 ? "주의" : "위험";
+  return { total, label, cats };
+}
+
+/* ── 원형 점수 게이지 ─────────────────── */
+function ScoreRing({ score }: { score: number }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - score / 100);
+  const col = scoreHex(score);
+  return (
+    <svg width="132" height="132" viewBox="0 0 132 132">
+      <circle cx="66" cy="66" r={r} fill="none" strokeWidth="12" className="stroke-zinc-200 dark:stroke-zinc-800" />
+      <circle
+        cx="66"
+        cy="66"
+        r={r}
+        fill="none"
+        stroke={col}
+        strokeWidth="12"
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={off}
+        transform="rotate(-90 66 66)"
+      />
+      <text x="66" y="62" textAnchor="middle" className="fill-zinc-900 dark:fill-zinc-50" fontSize="32" fontWeight="bold">
+        {score}
+      </text>
+      <text x="66" y="84" textAnchor="middle" className="fill-zinc-400" fontSize="12">
+        / 100
+      </text>
+    </svg>
+  );
+}
+
 /* ── 공시 이벤트 분류(배지) ───────────── */
 function classifyDisclosure(name: string): { label: string; cls: string } | null {
   const has = (...ks: string[]) => ks.some((k) => name.includes(k));
@@ -420,6 +530,7 @@ export default function Home() {
   const won = (v: number) => v.toLocaleString("ko-KR") + "원";
   const stockUp = (stock?.latest?.changeRate ?? 0) >= 0;
   const valuation = calcValuation(stock, latest);
+  const score = calcScore(years, valuation);
   const EXAMPLES = ["삼성전자", "카카오", "NAVER", "현대차", "셀트리온"];
 
   return (
@@ -545,6 +656,45 @@ export default function Home() {
                 </span>
               </div>
             </div>
+
+            {/* 투자 점수 게이지 (헤드라인) */}
+            {score && (
+              <div className="mb-5 flex flex-col items-center gap-6 rounded-2xl border border-zinc-200/70 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row">
+                <div className="flex shrink-0 flex-col items-center">
+                  <ScoreRing score={score.total} />
+                  <span
+                    className="mt-2 rounded-full px-3 py-1 text-sm font-bold text-white"
+                    style={{ backgroundColor: scoreHex(score.total) }}
+                  >
+                    {score.label}
+                  </span>
+                </div>
+                <div className="w-full flex-1">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">투자 점수</span>
+                    <span className="text-xs text-zinc-400">재무·밸류에이션 종합 (참고용)</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {score.cats.map((c) => (
+                      <div key={c.key} className="flex items-center gap-3">
+                        <span className="w-16 shrink-0 text-xs text-zinc-500">{c.label}</span>
+                        <div className="h-2.5 flex-1 rounded-full bg-zinc-100 dark:bg-zinc-800">
+                          {c.score !== null && (
+                            <div
+                              className="h-2.5 rounded-full transition-all"
+                              style={{ width: `${c.score}%`, backgroundColor: scoreHex(c.score) }}
+                            />
+                          )}
+                        </div>
+                        <span className="w-7 text-right text-xs font-semibold tabular-nums text-zinc-600 dark:text-zinc-300">
+                          {c.score ?? "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 탭 바 */}
             <div className="mb-5 flex gap-1 rounded-xl border border-zinc-200/70 bg-white p-1 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
