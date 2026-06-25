@@ -71,6 +71,24 @@ function fmtNewsDate(s: string): string {
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("ko-KR");
 }
 
+/* ── 색코딩(좋음 초록 / 주의 주황 / 나쁨 빨강) ── */
+const DEFAULT_NUM = "text-zinc-700 dark:text-zinc-300";
+function ratioTone(label: string, v: number): string {
+  if (label === "부채비율") return v >= 200 ? "text-red-500" : v >= 150 ? "text-amber-500" : v < 100 ? "text-emerald-600" : "";
+  if (label === "자기자본비율") return v >= 50 ? "text-emerald-600" : v < 20 ? "text-red-500" : "";
+  // 영업이익률·순이익률·ROE: 높을수록 좋음
+  return v < 0 ? "text-red-500" : v >= 10 ? "text-emerald-600" : "";
+}
+function perTone(per: number | null, loss: boolean): string {
+  if (loss) return "text-red-500";
+  if (per === null) return "";
+  return per < 12 ? "text-emerald-600" : per < 25 ? "" : per < 40 ? "text-amber-500" : "text-red-500";
+}
+function pbrTone(pbr: number | null): string {
+  if (pbr === null) return "";
+  return pbr < 1.5 ? "text-emerald-600" : pbr < 3 ? "" : pbr < 4 ? "text-amber-500" : "text-red-500";
+}
+
 /* ── 비율 ───────────────────────────── */
 function ratio(numer: number | null, denom: number | null): number | null {
   if (numer === null || denom === null || denom === 0) return null;
@@ -754,14 +772,22 @@ export default function Home() {
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                       <div className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800">
                         <p className="text-xs text-zinc-500">PER</p>
-                        <p className="mt-1 text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                        <p
+                          className={`mt-1 text-xl font-bold tabular-nums ${
+                            perTone(valuation.per, valuation.loss) || "text-zinc-900 dark:text-zinc-100"
+                          }`}
+                        >
                           {valuation.loss ? "적자" : valuation.per !== null ? valuation.per.toFixed(1) + "배" : "—"}
                         </p>
                         <p className="mt-1 text-[11px] text-zinc-400">주가 ÷ 순이익</p>
                       </div>
                       <div className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800">
                         <p className="text-xs text-zinc-500">PBR</p>
-                        <p className="mt-1 text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                        <p
+                          className={`mt-1 text-xl font-bold tabular-nums ${
+                            pbrTone(valuation.pbr) || "text-zinc-900 dark:text-zinc-100"
+                          }`}
+                        >
                           {valuation.pbr !== null ? valuation.pbr.toFixed(1) + "배" : "—"}
                         </p>
                         <p className="mt-1 text-[11px] text-zinc-400">주가 ÷ 순자산</p>
@@ -807,11 +833,17 @@ export default function Home() {
                             <td className="px-4 py-3 text-left font-medium text-zinc-800 dark:text-zinc-200">
                               {row.label}
                             </td>
-                            {years.map((y) => (
-                              <td key={y.year} className="px-4 py-3 tabular-nums text-zinc-700 dark:text-zinc-300">
-                                {toEok(y[row.key] as number | null)}
-                              </td>
-                            ))}
+                            {years.map((y) => {
+                              const v = y[row.key] as number | null;
+                              return (
+                                <td
+                                  key={y.year}
+                                  className={`px-4 py-3 tabular-nums ${v !== null && v < 0 ? "font-medium text-red-500" : DEFAULT_NUM}`}
+                                >
+                                  {toEok(v)}
+                                </td>
+                              );
+                            })}
                           </tr>
                         ))}
                       </tbody>
@@ -863,8 +895,12 @@ export default function Home() {
                             </td>
                             {years.map((y) => {
                               const v = row.calc(y);
+                              const tone = v === null ? "" : ratioTone(row.label, v);
                               return (
-                                <td key={y.year} className="px-4 py-3 tabular-nums text-zinc-700 dark:text-zinc-300">
+                                <td
+                                  key={y.year}
+                                  className={`px-4 py-3 tabular-nums font-medium ${tone || DEFAULT_NUM}`}
+                                >
                                   {v === null ? "—" : v.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) + "%"}
                                 </td>
                               );
