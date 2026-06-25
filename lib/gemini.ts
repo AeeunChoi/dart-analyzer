@@ -27,6 +27,7 @@ export type AnalyzePayload = {
   years: Year[];
   disclosures: Disc[];
   news: News[];
+  valuation?: { per: number | null; pbr: number | null } | null;
 };
 
 function eok(v: number | null): string {
@@ -35,8 +36,14 @@ function eok(v: number | null): string {
 }
 
 function buildPrompt(p: AnalyzePayload): string {
-  const { corp, years, disclosures, news } = p;
+  const { corp, years, disclosures, news, valuation } = p;
   const basis = years[0]?.fsDiv === "CFS" ? "연결" : "별도";
+  const valText =
+    valuation && (valuation.per !== null || valuation.pbr !== null)
+      ? `\n\n[밸류에이션] PER ${valuation.per !== null ? valuation.per.toFixed(1) + "배" : "—"}, PBR ${
+          valuation.pbr !== null ? valuation.pbr.toFixed(1) + "배" : "—"
+        } (현재 시가총액 기준)`
+      : "";
   const row = (label: string, fn: (y: Year) => string) =>
     [label, ...years.map(fn)].join(" | ");
 
@@ -68,12 +75,12 @@ ${table}
 ${discText}
 
 [최근 뉴스 헤드라인]
-${newsText}
+${newsText}${valText}
 
 위 자료만 근거로 다음 4개 항목을 한국어로 작성하세요. 각 항목은 자연스러운 문장으로.
 - disclosureSummary: 최근 공시들이 의미하는 핵심을 2~3문장으로. (증자·CB·자사주·합병·실적·소송 등 이벤트가 있으면 짚을 것)
 - newsSummary: 최근 뉴스 헤드라인의 주제와 논조를 2~3문장으로.
-- stockImpact: 위 재무·공시·뉴스가 주가에 미칠 수 있는 영향을 긍정 요인과 부정 요인으로 나눠 신중하게 검토 (4~6문장).
+- stockImpact: 위 재무·공시·뉴스·밸류에이션을 종합해 주가에 미칠 수 있는 영향을 긍정 요인과 부정 요인으로 나눠 신중하게 검토 (4~6문장). PER·PBR이 있으면 현재 주가가 이익·자산 대비 비싼지/싼지도 신중히 언급.
 - overall: 투자자가 한눈에 볼 종합 코멘트 3~4문장.
 
 [규칙]

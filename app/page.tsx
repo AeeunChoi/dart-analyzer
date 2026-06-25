@@ -81,6 +81,35 @@ function growth(curr: number | null, prev: number | null): number | null {
   return ((curr - prev) / Math.abs(prev)) * 100;
 }
 
+/* ── 밸류에이션 (시총·주식수 + 재무로 계산) ── */
+type Valuation = {
+  per: number | null; // 주가수익비율 = 시총 / 당기순이익
+  pbr: number | null; // 주가순자산비율 = 시총 / 자본총계
+  eps: number | null; // 주당순이익 = 당기순이익 / 주식수
+  bps: number | null; // 주당순자산 = 자본총계 / 주식수
+  niYear: number | null; // 기준 재무 연도
+  loss: boolean; // 당기순손실 여부
+};
+function calcValuation(
+  stock: StockInfo | null,
+  latestYear: YearFinancials | undefined
+): Valuation | null {
+  if (!stock?.latest || !latestYear) return null;
+  const mcap = stock.latest.marketCap;
+  const price = stock.latest.close;
+  const shares = stock.latest.shares ?? (mcap && price ? Math.round(mcap / price) : null);
+  const ni = latestYear.netIncome;
+  const eq = latestYear.equity;
+  return {
+    per: mcap && ni && ni > 0 ? mcap / ni : null,
+    pbr: mcap && eq && eq > 0 ? mcap / eq : null,
+    eps: ni !== null && shares ? ni / shares : null,
+    bps: eq !== null && shares ? eq / shares : null,
+    niYear: latestYear.year,
+    loss: ni !== null && ni <= 0,
+  };
+}
+
 const METRIC_ROWS: { key: keyof YearFinancials; label: string }[] = [
   { key: "revenue", label: "매출액" },
   { key: "operatingIncome", label: "영업이익" },
@@ -328,6 +357,10 @@ export default function Home() {
           years: data.years,
           disclosures: data.disclosures ?? [],
           news: data.news ?? [],
+          valuation: (() => {
+            const v = calcValuation(data.stock ?? null, data.years?.[0]);
+            return v ? { per: v.per, pbr: v.pbr } : null;
+          })(),
         }),
       });
       const json = await res.json();
@@ -386,6 +419,7 @@ export default function Home() {
   const prev = years[1];
   const won = (v: number) => v.toLocaleString("ko-KR") + "원";
   const stockUp = (stock?.latest?.changeRate ?? 0) >= 0;
+  const valuation = calcValuation(stock, latest);
   const EXAMPLES = ["삼성전자", "카카오", "NAVER", "현대차", "셀트리온"];
 
   return (
@@ -562,6 +596,45 @@ export default function Home() {
                         </p>
                       </div>
                     </div>
+                  </Card>
+                )}
+
+                {valuation && (valuation.per !== null || valuation.pbr !== null || valuation.loss) && (
+                  <Card title={`밸류에이션 · 주가 대비 가치 (${valuation.niYear} 재무 기준)`}>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800">
+                        <p className="text-xs text-zinc-500">PER</p>
+                        <p className="mt-1 text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {valuation.loss ? "적자" : valuation.per !== null ? valuation.per.toFixed(1) + "배" : "—"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-zinc-400">주가 ÷ 순이익</p>
+                      </div>
+                      <div className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800">
+                        <p className="text-xs text-zinc-500">PBR</p>
+                        <p className="mt-1 text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {valuation.pbr !== null ? valuation.pbr.toFixed(1) + "배" : "—"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-zinc-400">주가 ÷ 순자산</p>
+                      </div>
+                      <div className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800">
+                        <p className="text-xs text-zinc-500">EPS</p>
+                        <p className="mt-1 text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {valuation.eps !== null ? Math.round(valuation.eps).toLocaleString("ko-KR") + "원" : "—"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-zinc-400">주당순이익</p>
+                      </div>
+                      <div className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800">
+                        <p className="text-xs text-zinc-500">BPS</p>
+                        <p className="mt-1 text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {valuation.bps !== null ? Math.round(valuation.bps).toLocaleString("ko-KR") + "원" : "—"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-zinc-400">주당순자산</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs text-zinc-400">
+                      PER·PBR은 낮을수록 이익·자산 대비 저평가로 볼 수 있으나, 업종·성장성에 따라 적정 수준이 다릅니다. 현재
+                      시가총액과 최근 {valuation.niYear}년 사업보고서 실적 기준입니다.
+                    </p>
                   </Card>
                 )}
 
