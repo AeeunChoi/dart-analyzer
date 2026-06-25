@@ -8,6 +8,10 @@ const FinancialCharts = dynamic(() => import("./FinancialCharts"), {
   ssr: false,
   loading: () => <p className="py-8 text-center text-sm text-zinc-400">차트 로딩 중…</p>,
 });
+const StockChart = dynamic(() => import("./StockChart"), {
+  ssr: false,
+  loading: () => <p className="py-8 text-center text-sm text-zinc-400">차트 로딩 중…</p>,
+});
 
 /* ── 타입 ───────────────────────────── */
 type YearFinancials = {
@@ -24,11 +28,25 @@ type YearFinancials = {
 type CorpMatch = { corp_code: string; corp_name: string; stock_code: string; listed: boolean };
 type Disclosure = { report_nm: string; rcept_dt: string; flr_nm: string; rcept_no: string; url: string };
 type NewsItem = { title: string; link: string; pubDate: string; source: string };
+type StockPoint = { date: string; close: number; open: number; high: number; low: number; volume: number };
+type StockInfo = {
+  name: string;
+  latest: {
+    date: string;
+    close: number;
+    change: number;
+    changeRate: number;
+    marketCap: number | null;
+    shares: number | null;
+  } | null;
+  series: StockPoint[];
+};
 type ApiResult = {
   corp?: CorpMatch;
   years?: YearFinancials[];
   disclosures?: Disclosure[];
   news?: NewsItem[];
+  stock?: StockInfo | null;
   error?: string;
 };
 type AiAnalysis = { disclosureSummary: string; newsSummary: string; stockImpact: string; overall: string };
@@ -363,8 +381,11 @@ export default function Home() {
   const years = result?.years ?? [];
   const disclosures = result?.disclosures ?? [];
   const news = result?.news ?? [];
+  const stock = result?.stock ?? null;
   const latest = years[0];
   const prev = years[1];
+  const won = (v: number) => v.toLocaleString("ko-KR") + "원";
+  const stockUp = (stock?.latest?.changeRate ?? 0) >= 0;
   const EXAMPLES = ["삼성전자", "카카오", "NAVER", "현대차", "셀트리온"];
 
   return (
@@ -472,9 +493,23 @@ export default function Home() {
                   )}
                 </div>
               </div>
-              <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800">
-                {latest?.fsDiv === "CFS" ? "연결 기준" : "별도 기준"} · 단위 억원
-              </span>
+              <div className="flex flex-col items-end gap-1">
+                {stock?.latest ? (
+                  <div className="text-right">
+                    <div className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
+                      {won(stock.latest.close)}
+                    </div>
+                    <div className={`text-sm font-semibold tabular-nums ${stockUp ? "text-red-500" : "text-blue-500"}`}>
+                      {stockUp ? "▲" : "▼"} {Math.abs(stock.latest.change).toLocaleString("ko-KR")} (
+                      {stock.latest.changeRate > 0 ? "+" : ""}
+                      {stock.latest.changeRate}%)
+                    </div>
+                  </div>
+                ) : null}
+                <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800">
+                  {latest?.fsDiv === "CFS" ? "연결 기준" : "별도 기준"} · 단위 억원
+                </span>
+              </div>
             </div>
 
             {/* 탭 바 */}
@@ -497,6 +532,39 @@ export default function Home() {
             {/* ───── 재무 탭 ───── */}
             {tab === "fin" && (
               <div className="space-y-6">
+                {stock?.latest && stock.series.length > 1 && (
+                  <Card title="주가 추이 (최근 6개월)">
+                    <StockChart series={stock.series} up={stockUp} />
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="rounded-lg bg-zinc-50 p-3 text-center dark:bg-zinc-800/50">
+                        <p className="text-xs text-zinc-500">현재가</p>
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {won(stock.latest.close)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-zinc-50 p-3 text-center dark:bg-zinc-800/50">
+                        <p className="text-xs text-zinc-500">등락률</p>
+                        <p className={`mt-0.5 text-sm font-bold tabular-nums ${stockUp ? "text-red-500" : "text-blue-500"}`}>
+                          {stock.latest.changeRate > 0 ? "+" : ""}
+                          {stock.latest.changeRate}%
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-zinc-50 p-3 text-center dark:bg-zinc-800/50">
+                        <p className="text-xs text-zinc-500">시가총액</p>
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {stock.latest.marketCap ? toEok(stock.latest.marketCap) : "—"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-zinc-50 p-3 text-center dark:bg-zinc-800/50">
+                        <p className="text-xs text-zinc-500">기준일</p>
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {fmtYmd(stock.latest.date)}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
                 <Card title="핵심 재무 숫자">
                   <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
                     <table className="w-full text-right text-sm">
