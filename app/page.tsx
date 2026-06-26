@@ -501,8 +501,8 @@ function Skeleton() {
 /* ── 섹션 카드 래퍼 ───────────────────── */
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-zinc-200/70 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.06)] dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none">
-      <h3 className="mb-5 flex items-center gap-2 text-[15px] font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+    <section className="rounded-2xl border border-zinc-200/70 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.06)] dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none sm:p-6">
+      <h3 className="mb-4 flex items-center gap-2 text-[15px] font-bold tracking-tight text-zinc-800 dark:text-zinc-100 sm:mb-5">
         <span className="h-4 w-1 rounded-full bg-blue-500" />
         {title}
       </h3>
@@ -835,7 +835,7 @@ export default function Home() {
         {result?.corp && years.length > 0 && (
           <div className="mt-8">
             {/* 회사 헤더 */}
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200/70 bg-white px-6 py-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200/70 bg-white px-4 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:px-6 sm:py-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600/10 text-lg font-bold text-blue-600">
                   {result.corp.corp_name.slice(0, 1)}
@@ -850,7 +850,7 @@ export default function Home() {
               <div className="flex flex-col items-end gap-1">
                 {stock?.latest ? (
                   <div className="text-right">
-                    <div className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
+                    <div className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-50 sm:text-2xl">
                       {won(stock.latest.close)}
                     </div>
                     <div className={`text-sm font-semibold tabular-nums ${stockUp ? "text-red-500" : "text-blue-500"}`}>
@@ -868,7 +868,7 @@ export default function Home() {
 
             {/* 투자 점수 게이지 (헤드라인) */}
             {score && (
-              <div className="mb-5 flex flex-col items-center gap-6 rounded-2xl border border-zinc-200/70 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row">
+              <div className="mb-5 flex flex-col items-center gap-4 rounded-2xl border border-zinc-200/70 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:gap-6 sm:p-6">
                 <div className="flex shrink-0 flex-col items-center">
                   <ScoreRing score={score.total} />
                   <span
@@ -911,7 +911,7 @@ export default function Home() {
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
-                  className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all ${
+                  className={`flex-1 whitespace-nowrap rounded-lg px-1.5 py-2.5 text-[13px] font-semibold transition-all sm:px-4 sm:text-sm ${
                     tab === t.id
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
@@ -1052,9 +1052,9 @@ export default function Home() {
                         const g = growth(latest[item.key] as number | null, prev[item.key] as number | null);
                         const up = g !== null && g >= 0;
                         return (
-                          <div key={item.key} className="rounded-lg border border-zinc-200 p-4 text-center dark:border-zinc-800">
+                          <div key={item.key} className="rounded-lg border border-zinc-200 p-3 text-center dark:border-zinc-800 sm:p-4">
                             <p className="text-xs text-zinc-500">{item.label}</p>
-                            <p className={`mt-1 text-lg font-bold ${g === null ? "text-zinc-400" : up ? "text-emerald-600" : "text-red-600"}`}>
+                            <p className={`mt-1 text-base font-bold sm:text-lg ${g === null ? "text-zinc-400" : up ? "text-emerald-600" : "text-red-600"}`}>
                               {pct(g)}
                             </p>
                           </div>
@@ -1300,7 +1300,9 @@ export default function Home() {
                     <table className="w-full text-right text-sm">
                       <thead className="bg-zinc-100 dark:bg-zinc-800/60">
                         <tr>
-                          <th className="px-3 py-3 text-left font-semibold text-zinc-700 dark:text-zinc-300">항목</th>
+                          <th className="sticky left-0 bg-zinc-100 px-3 py-3 text-left font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                            항목
+                          </th>
                           {compCompanies.map((c, i) => (
                             <th key={c.code} className="px-3 py-3 font-semibold text-zinc-700 dark:text-zinc-300">
                               {c.name}
@@ -1315,7 +1317,7 @@ export default function Home() {
                           const bi = bestIndex(vals, row.better);
                           return (
                             <tr key={row.label} className="border-t border-zinc-200 dark:border-zinc-800">
-                              <td className="px-3 py-3 text-left font-medium text-zinc-800 dark:text-zinc-200">
+                              <td className="sticky left-0 bg-white px-3 py-3 text-left font-medium text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
                                 {row.label}
                               </td>
                               {compCompanies.map((c, i) => (
