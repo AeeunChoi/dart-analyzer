@@ -535,10 +535,33 @@ export default function Home() {
   const [compInput, setCompInput] = useState("");
   const [competitors, setCompetitors] = useState<ApiResult[]>([]);
   const [compLoading, setCompLoading] = useState(false);
+  const [compSuggestions, setCompSuggestions] = useState<Suggestion[]>([]);
+  const [compShowSuggest, setCompShowSuggest] = useState(false);
+
+  // 비교 입력창 자동완성
+  useEffect(() => {
+    const q = compInput.trim();
+    if (q.length < 1) {
+      setCompSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`);
+        const json = await res.json();
+        setCompSuggestions(json.items ?? []);
+      } catch {
+        setCompSuggestions([]);
+      }
+    }, 180);
+    return () => clearTimeout(t);
+  }, [compInput]);
 
   async function addCompetitor(name: string) {
     const q = name.trim();
     if (!q || compLoading || competitors.length >= 3) return;
+    setCompShowSuggest(false);
+    setCompSuggestions([]);
     setCompLoading(true);
     try {
       const res = await fetch(`/api/financials?name=${encodeURIComponent(q)}`);
@@ -1214,13 +1237,37 @@ export default function Home() {
                     }}
                     className="flex gap-2"
                   >
-                    <input
-                      value={compInput}
-                      onChange={(e) => setCompInput(e.target.value)}
-                      placeholder="예: SK하이닉스 또는 000660"
-                      disabled={competitors.length >= 3}
-                      className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-                    />
+                    <div className="relative flex-1">
+                      <input
+                        value={compInput}
+                        onChange={(e) => {
+                          setCompInput(e.target.value);
+                          setCompShowSuggest(true);
+                        }}
+                        onFocus={() => compSuggestions.length > 0 && setCompShowSuggest(true)}
+                        onBlur={() => setTimeout(() => setCompShowSuggest(false), 150)}
+                        placeholder="예: SK하이닉스 또는 000660"
+                        disabled={competitors.length >= 3}
+                        className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                      />
+                      {compShowSuggest && compSuggestions.length > 0 && (
+                        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                          {compSuggestions.map((s) => (
+                            <li key={s.stock_code}>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => addCompetitor(s.corp_name)}
+                                className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-blue-50 dark:hover:bg-zinc-800"
+                              >
+                                <span className="text-zinc-800 dark:text-zinc-200">{s.corp_name}</span>
+                                <span className="text-xs text-zinc-400">{s.stock_code}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                     <button
                       type="submit"
                       disabled={compLoading || competitors.length >= 3}
