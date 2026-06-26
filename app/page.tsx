@@ -218,9 +218,12 @@ function sCash(y: YearFinancials): number | null {
 function sValue(v: Valuation | null): number | null {
   if (!v) return null;
   const s: number[] = [];
-  if (v.loss) s.push(30);
-  else if (v.per !== null) s.push(v.per < 8 ? 92 : v.per < 12 ? 80 : v.per < 18 ? 68 : v.per < 25 ? 55 : v.per < 40 ? 42 : 30);
-  if (v.pbr !== null) s.push(v.pbr < 1 ? 92 : v.pbr < 1.5 ? 80 : v.pbr < 2.5 ? 66 : v.pbr < 4 ? 50 : 38);
+  if (v.loss) s.push(20);
+  else if (v.per !== null)
+    s.push(
+      v.per < 8 ? 92 : v.per < 12 ? 80 : v.per < 18 ? 68 : v.per < 25 ? 55 : v.per < 40 ? 42 : v.per < 60 ? 32 : v.per < 100 ? 22 : 12
+    );
+  if (v.pbr !== null) s.push(v.pbr < 1 ? 92 : v.pbr < 1.5 ? 80 : v.pbr < 2.5 ? 66 : v.pbr < 4 ? 50 : v.pbr < 8 ? 38 : 24);
   return s.length ? avg(s) : null;
 }
 function calcScore(years: YearFinancials[], valuation: Valuation | null): ScoreResult | null {
