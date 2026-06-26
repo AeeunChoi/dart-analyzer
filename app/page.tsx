@@ -248,6 +248,68 @@ function calcScore(years: YearFinancials[], valuation: Valuation | null): ScoreR
   return { total, label, cats };
 }
 
+/* ── 경쟁사 비교 요약 ─────────────────── */
+type CompanySummary = {
+  name: string;
+  code: string;
+  revenue: number | null;
+  opIncome: number | null;
+  netIncome: number | null;
+  opMargin: number | null;
+  roe: number | null;
+  debt: number | null;
+  per: number | null;
+  pbr: number | null;
+  mcap: number | null;
+  score: number | null;
+};
+function summarize(r: ApiResult): CompanySummary {
+  const y = r.years?.[0];
+  const val = calcValuation(r.stock ?? null, y);
+  const sc = calcScore(r.years ?? [], val);
+  return {
+    name: r.corp?.corp_name ?? "",
+    code: r.corp?.stock_code ?? "",
+    revenue: y?.revenue ?? null,
+    opIncome: y?.operatingIncome ?? null,
+    netIncome: y?.netIncome ?? null,
+    opMargin: y ? ratio(y.operatingIncome, y.revenue) : null,
+    roe: y ? ratio(y.netIncome, y.equity) : null,
+    debt: y ? ratio(y.liabilities, y.equity) : null,
+    per: val?.per ?? null,
+    pbr: val?.pbr ?? null,
+    mcap: r.stock?.latest?.marketCap ?? null,
+    score: sc?.total ?? null,
+  };
+}
+const COMPARE_ROWS: {
+  label: string;
+  get: (s: CompanySummary) => number | null;
+  fmt: (v: number | null) => string;
+  better: "high" | "low" | null;
+}[] = [
+  { label: "투자점수", get: (s) => s.score, fmt: (v) => (v !== null ? v + "점" : "—"), better: "high" },
+  { label: "시가총액", get: (s) => s.mcap, fmt: (v) => (v !== null ? fmtJoEok(v) : "—"), better: null },
+  { label: "매출액", get: (s) => s.revenue, fmt: (v) => toEok(v), better: "high" },
+  { label: "영업이익", get: (s) => s.opIncome, fmt: (v) => toEok(v), better: "high" },
+  { label: "당기순이익", get: (s) => s.netIncome, fmt: (v) => toEok(v), better: "high" },
+  { label: "영업이익률", get: (s) => s.opMargin, fmt: (v) => (v !== null ? v.toFixed(1) + "%" : "—"), better: "high" },
+  { label: "ROE", get: (s) => s.roe, fmt: (v) => (v !== null ? v.toFixed(1) + "%" : "—"), better: "high" },
+  { label: "부채비율", get: (s) => s.debt, fmt: (v) => (v !== null ? v.toFixed(1) + "%" : "—"), better: "low" },
+  { label: "PER", get: (s) => s.per, fmt: (v) => (v !== null ? v.toFixed(1) + "배" : "—"), better: "low" },
+  { label: "PBR", get: (s) => s.pbr, fmt: (v) => (v !== null ? v.toFixed(1) + "배" : "—"), better: "low" },
+];
+// 비교 행에서 가장 좋은 칸의 인덱스(동률·단독은 강조 안 함)
+function bestIndex(vals: (number | null)[], better: "high" | "low" | null): number {
+  if (!better) return -1;
+  const valid = vals.map((v, i) => ({ v, i })).filter((x) => x.v !== null) as { v: number; i: number }[];
+  if (valid.length < 2) return -1;
+  const best = valid.reduce((b, x) => (better === "high" ? (x.v > b.v ? x : b) : x.v < b.v ? x : b));
+  // 동률이면 강조 생략
+  if (valid.filter((x) => x.v === best.v).length > 1) return -1;
+  return best.i;
+}
+
 /* ── 원형 점수 게이지 ─────────────────── */
 function ScoreRing({ score }: { score: number }) {
   const r = 52;
@@ -453,6 +515,7 @@ const TABS = [
   { id: "fin", label: "재무" },
   { id: "disc", label: "공시·뉴스" },
   { id: "ai", label: "AI 분석" },
+  { id: "compare", label: "비교" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -469,6 +532,32 @@ export default function Home() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [rankings, setRankings] = useState<Rankings | null>(null);
   const [rankTab, setRankTab] = useState<"marketCap" | "volume" | "tradeValue">("marketCap");
+  const [compInput, setCompInput] = useState("");
+  const [competitors, setCompetitors] = useState<ApiResult[]>([]);
+  const [compLoading, setCompLoading] = useState(false);
+
+  async function addCompetitor(name: string) {
+    const q = name.trim();
+    if (!q || compLoading || competitors.length >= 3) return;
+    setCompLoading(true);
+    try {
+      const res = await fetch(`/api/financials?name=${encodeURIComponent(q)}`);
+      const data: ApiResult = await res.json();
+      const code = data.corp?.stock_code;
+      const dup = code === result?.corp?.stock_code || competitors.some((c) => c.corp?.stock_code === code);
+      if (data.corp && data.years && data.years.length > 0 && code && !dup) {
+        setCompetitors((prev) => [...prev, data]);
+        setCompInput("");
+      }
+    } catch {
+      /* 무시 */
+    } finally {
+      setCompLoading(false);
+    }
+  }
+  function removeCompetitor(code: string) {
+    setCompetitors((prev) => prev.filter((c) => c.corp?.stock_code !== code));
+  }
 
   // 첫 화면 순위(시총·거래량·거래대금) 1회 로드
   useEffect(() => {
@@ -537,6 +626,8 @@ export default function Home() {
     setAi(null);
     setAiError(null);
     setTab("fin");
+    setCompetitors([]);
+    setCompInput("");
     try {
       const res = await fetch(`/api/financials?name=${encodeURIComponent(q)}`);
       const data: ApiResult = await res.json();
@@ -576,6 +667,8 @@ export default function Home() {
   const stockUp = (stock?.latest?.changeRate ?? 0) >= 0;
   const valuation = calcValuation(stock, latest);
   const score = calcScore(years, valuation);
+  const compCompanies: CompanySummary[] =
+    result?.corp && years.length > 0 ? [summarize(result), ...competitors.map(summarize)] : [];
   const EXAMPLES = ["삼성전자", "카카오", "NAVER", "현대차", "셀트리온"];
 
   return (
@@ -1102,6 +1195,104 @@ export default function Home() {
                       className="h-48 w-full resize-none bg-transparent p-4 font-mono text-xs text-zinc-700 outline-none dark:text-zinc-300"
                     />
                   </div>
+                </Card>
+              </div>
+            )}
+
+            {/* ───── 비교 탭 ───── */}
+            {tab === "compare" && (
+              <div className="space-y-6">
+                <Card title="경쟁사 비교">
+                  <p className="mb-3 text-sm text-zinc-500">
+                    비교할 회사를 최대 3개까지 추가하세요. {result.corp.corp_name}와 핵심 지표·밸류에이션·투자점수를
+                    나란히 비교합니다.
+                  </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      addCompetitor(compInput);
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      value={compInput}
+                      onChange={(e) => setCompInput(e.target.value)}
+                      placeholder="예: SK하이닉스 또는 000660"
+                      disabled={competitors.length >= 3}
+                      className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={compLoading || competitors.length >= 3}
+                      className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {compLoading ? "추가중…" : "추가"}
+                    </button>
+                  </form>
+                  {competitors.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {competitors.map((c) => (
+                        <span
+                          key={c.corp!.stock_code}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                        >
+                          {c.corp!.corp_name}
+                          <button
+                            onClick={() => removeCompetitor(c.corp!.stock_code)}
+                            className="text-zinc-400 hover:text-red-500"
+                            aria-label="삭제"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-5 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+                    <table className="w-full text-right text-sm">
+                      <thead className="bg-zinc-100 dark:bg-zinc-800/60">
+                        <tr>
+                          <th className="px-3 py-3 text-left font-semibold text-zinc-700 dark:text-zinc-300">항목</th>
+                          {compCompanies.map((c, i) => (
+                            <th key={c.code} className="px-3 py-3 font-semibold text-zinc-700 dark:text-zinc-300">
+                              {c.name}
+                              {i === 0 && <span className="ml-1 text-[10px] font-normal text-blue-600">기준</span>}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {COMPARE_ROWS.map((row) => {
+                          const vals = compCompanies.map(row.get);
+                          const bi = bestIndex(vals, row.better);
+                          return (
+                            <tr key={row.label} className="border-t border-zinc-200 dark:border-zinc-800">
+                              <td className="px-3 py-3 text-left font-medium text-zinc-800 dark:text-zinc-200">
+                                {row.label}
+                              </td>
+                              {compCompanies.map((c, i) => (
+                                <td
+                                  key={c.code}
+                                  className={`px-3 py-3 tabular-nums ${
+                                    i === bi ? "font-bold text-emerald-600" : DEFAULT_NUM
+                                  }`}
+                                >
+                                  {row.fmt(vals[i])}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {competitors.length === 0 && (
+                    <p className="mt-3 text-xs text-zinc-400">
+                      아직 비교 대상이 없어요. 위에서 회사를 추가하면 나란히 비교됩니다. (초록색 = 그 항목 1위)
+                    </p>
+                  )}
                 </Card>
               </div>
             )}
